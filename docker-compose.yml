@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  # 前端服务
+  frontend:
+    build: .
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+  # 后端服务 (假设您有后端Docker镜像)
+  backend:
+    # image: your-backend-image:latest
+    # 或者构建本地后端
+    # build: ./backend
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+    networks:
+      - app-network
+    volumes:
+      - ./data:/app/data  # 数据持久化
+
+networks:
+  app-network:
+    driver: bridge 
