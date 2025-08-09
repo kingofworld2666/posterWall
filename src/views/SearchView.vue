@@ -347,7 +347,7 @@ const handleSearch = async () => {
       sort: sortBy.value
     }
 
-    const response = await axios.get('/api/movies/search', { params })
+    const response = await axios.get('/api/movies/search', { params, silent: true })
     searchResults.value = response.data.content
     totalResults.value = response.data.totalElements
   } catch (error) {
@@ -370,17 +370,18 @@ const handlePageChange = async (page) => {
       let response
       switch (route.query.type) {
         case 'actress':
-          response = await axios.get('/api/movies/search/actress', { params })
+          response = await axios.get('/api/movies/search/actress', { params, silent: true })
           break
         case 'director':
-          response = await axios.get('/api/movies/search/director', { params })
+          response = await axios.get('/api/movies/search/director', { params, silent: true })
           break
         case 'studio':
-          response = await axios.get('/api/movies/search/studio', { params })
+          response = await axios.get('/api/movies/search/studio', { params, silent: true })
           break
         case 'category':
           response = await axios.get('/api/movies/search/category', { 
-            params: { ...params, categoryName: params.name }
+            params: { ...params, categoryName: params.name },
+            silent: true
           })
           break
       }

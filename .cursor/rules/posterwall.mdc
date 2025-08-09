@@ -1,8 +1,7 @@
 ---
-description: 
-globs: 
-alwaysApply: false
+alwaysApply: true
 ---
 1、这是一个vue+elementui的前端项目
 2、这是一个海报墙项目
+3、http://localhost:8080/v2/api-docs 这是后端的接口文档
 

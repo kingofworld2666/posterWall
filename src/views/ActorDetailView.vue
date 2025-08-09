@@ -362,7 +362,7 @@ const downloadMovie = async (movie) => {
   try {
     downloadingMovies.value.push(movie.id)
     
-    const response = await axios.post(`/api/movies/${movie.id}/download`)
+    const response = await axios.post(`/api/movies/${movie.id}/download`, null, { silent: true })
     
     if (response.data.success) {
       ElMessage.success('下载任务已添加到队列')
@@ -397,7 +397,7 @@ const formatDate = (dateStr) => {
 const loadRecordedMovies = async () => {
   try {
     const actorId = route.params.id
-    const response = await axios.get(`/api/actors/${actorId}/movies/recorded`)
+    const response = await axios.get(`/api/actors/${actorId}/movies/recorded`, { silent: true })
     recordedMovies.value = response.data || []
   } catch (error) {
     console.error('加载已收录影片失败:', error)
@@ -410,7 +410,7 @@ const loadRecordedMovies = async () => {
 const loadUnrecordedMovies = async () => {
   try {
     const actorId = route.params.id
-    const response = await axios.get(`/api/actors/${actorId}/movies/unrecorded`)
+    const response = await axios.get(`/api/actors/${actorId}/movies/unrecorded`, { silent: true })
     unrecordedMovies.value = response.data || []
   } catch (error) {
     console.error('加载未收录影片失败:', error)
@@ -448,7 +448,8 @@ const loadUnrecordedMovies = async () => {
           size: pageSize.value,
           sortBy: sortBy.value,
           sortDesc: sortDesc.value
-        }
+        },
+        silent: true
       })
 
       console.log('演员影片响应:', response.data)
@@ -583,7 +584,7 @@ const loadUnrecordedMovies = async () => {
       
       // 调用后端接口获取演员详细信息
       console.log('正在加载演员详细信息，ID:', actorId)
-      const response = await axios.get(`/api/actors/${actorId}`)
+      const response = await axios.get(`/api/actors/${actorId}`, { silent: true })
       
       console.log('演员详细信息响应:', response.data)
       actor.value = response.data

@@ -174,7 +174,7 @@ const loadHistoryData = async (shouldRestoreScroll = false) => {
     }
     
     // 调用API获取数据
-    const response = await axios.get('/api/play-history/page/search', { params })
+    const response = await axios.get('/api/play-history/page/search', { params, silent: true })
     console.log('API返回数据:', response.data)
     
     if (response.data.code === 1) {
@@ -289,7 +289,7 @@ const removeFromHistory = async (item) => {
     }
   ).then(async () => {
     try {
-      const response = await axios.delete(`/api/play-history/${item.historyId}`)
+      const response = await axios.delete(`/api/play-history/${item.historyId}`, { silent: true })
       if (response.data.code === 1) {
         historyList.value = historyList.value.filter(i => i.id !== item.id)
         ElMessage.success('已删除记录')

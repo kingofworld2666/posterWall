@@ -6,6 +6,8 @@ import 'element-plus/dist/index.css'
 import App from './App.vue'
 import router from './router'
 import './assets/main.css'
+// 引入统一的请求拦截与错误提示配置（对全局 axios 生效）
+import './services/http'
 
 const app = createApp(App)
 

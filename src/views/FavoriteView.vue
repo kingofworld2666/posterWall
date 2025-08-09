@@ -232,7 +232,7 @@ const loadFavorites = async () => {
     if (activeTab.value === 'movies') {
       console.log('[收藏视图] 加载收藏影片，参数:', JSON.stringify(params));
       try {
-        response = await axios.get('/api/favorites/movies', { params });
+        response = await axios.get('/api/favorites/movies', { params, silent: true });
         console.log('[收藏视图] 收藏影片API响应:', response);
         if (response && response.data) {
           // 兼容两种返回：数组 或 分页对象 { content, totalElements }
@@ -315,7 +315,7 @@ const removeFromFavorites = async (item: MovieItem | ActorItem | TagItem, type: 
       try {
         // 后端按“电影ID”删除；兼容响应中既有 id 也有 movieId 的情况
         const movieId = (item as any).movieId || (item as any).id;
-        const response = await axios.delete(`/api/favorites/movies/${movieId}`);
+        const response = await axios.delete(`/api/favorites/movies/${movieId}`, { silent: true });
         console.log(`[收藏视图] 移除收藏影片API响应:`, response);
         if ((response.status === 200 || response.status === 204) || (response.data && response.data.success === true)) {
           ElMessage.success('取消收藏影片成功');

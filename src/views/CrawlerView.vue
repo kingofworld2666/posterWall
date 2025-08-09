@@ -392,7 +392,7 @@ const startActorCrawl = () => {
 const getLastSyncResult = async () => {
   try {
     console.log('获取最近一次同步结果...');
-    const response = await axios.get('/api/115/sync/result');
+    const response = await axios.get('/api/115/sync/result', { silent: true });
     
     if (response.status === 200 && response.data) {
       console.log('获取同步结果成功:', response.data);
@@ -417,7 +417,7 @@ const sync115Movies = async () => {
     const params = new URLSearchParams({
       fileSizeLimitMB: syncForm.fileSizeLimitMB.toString()
     });
-    const response = await axios.get(`/api/115/sync?${params}`);
+    const response = await axios.get(`/api/115/sync?${params}`, { silent: true });
     
     if (response.status === 200) {
       ElMessage.success('115网盘同步完成！');

@@ -1125,7 +1125,7 @@ const showCookieInput = async () => {
   try {
     const cookieResp = await axios.post(`/api/115/cookie`, {
       cookie: result.value.trim()
-    })
+    }, { silent: true })
     
     if (cookieResp.data.code === 0) {
       throw new Error(cookieResp.data.message || 'Cookie设置失败')
@@ -1153,11 +1153,23 @@ const search115Files = async () => {
       params: {
         videoCode: videoCode,
         movieId: movie.value.id
-      }
+      },
+      // 静默并跳过统一业务码拦截，手动判断 code 以处理 201 场景
+      silent: true,
+      skipBusinessCheck: true
     })
 
-    if (resp.data.code === 0) {
-        needSetCookie.value = true
+    const code = resp?.data?.code
+    if (code === 201) {
+      // 201 表示 Cookie 失效：显示“需要设置Cookie”的按钮
+      needSetCookie.value = true
+      pan115Results.value = []
+      return
+    }
+    if (code !== 1) {
+      // 其他业务失败：给出后端 message 提示
+      ElMessage.error(resp?.data?.message || '搜索失败')
+      pan115Results.value = []
       return
     }
 
@@ -1204,7 +1216,7 @@ const copy115Link = async (pickCode) => {
 }
 
 const clickPlay = (pc, movie) => {
-  axios.get(`/api/play-history/save/${movie.id}`)
+  axios.get(`/api/play-history/save/${movie.id}`, { silent: true })
   // 打开播放页面
   window.open(`https://115vod.com/?pickcode=${pc}&share_id=0`);
 }
@@ -1632,7 +1644,7 @@ watch(
     cursor: pointer;
     
     /* 海报列允许收缩，最小360px，中位55vw，最大1200px（自适应放大） */
-    flex: 0 1 clamp(360px, 55vw, 1200px);
+    flex: 0 1 clamp(300px, 55vw, 1200px);
 
     .poster-container {
       width: 100%;

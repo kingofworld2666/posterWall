@@ -456,31 +456,36 @@ const getMovies = async (params) => {
       case 'all':
       case 'title':
         // 全部和标题搜索都使用通用搜索接口
-        response = await axios.get('/api/movies', { params });
+        response = await axios.get('/api/movies', { params, silent: true });
         break;
       case 'actress':
         response = await axios.get('/api/movies/search/actress', { 
-          params: { ...params, name: searchQuery.value || params.keyword }
+          params: { ...params, name: searchQuery.value || params.keyword },
+          silent: true
         });
         break;
       case 'director':
         response = await axios.get('/api/movies/search/director', { 
-          params: { ...params, name: searchQuery.value || params.keyword }
+          params: { ...params, name: searchQuery.value || params.keyword },
+          silent: true
         });
         break;
       case 'studio':
         response = await axios.get('/api/movies/search/studio', { 
-          params: { ...params, name: searchQuery.value || params.keyword }
+          params: { ...params, name: searchQuery.value || params.keyword },
+          silent: true
         });
         break;
       case 'category':
         response = await axios.get('/api/movies/search/category', { 
-          params: { ...params, categoryName: searchQuery.value || params.keyword }
+          params: { ...params, categoryName: searchQuery.value || params.keyword },
+          silent: true
         });
         break;
       case 'series':
         response = await axios.get('/api/movies/search/series', { 
-          params: { ...params, series: searchQuery.value || params.keyword }
+          params: { ...params, series: searchQuery.value || params.keyword },
+          silent: true
         });
         break;
     }

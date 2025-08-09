@@ -185,7 +185,8 @@ const loadActors = async () => {
         keyword: searchQuery.value,
         page: currentPage.value,
         size: pageSize.value
-      }
+      },
+      silent: true
     })
     
     // 输出响应数据用于调试
