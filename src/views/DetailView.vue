@@ -892,10 +892,46 @@ const handleTypeClick = async (type, keyword) => {
   })
 }
 
+// 复制到剪贴板通用实现（含降级方案）
 const copyToClipboard = async (text) => {
   try {
-    await navigator.clipboard.writeText(text)
-    ElMessage.success('已复制到剪贴板')
+    const content = String(text ?? '')
+    if (!content) {
+      ElMessage.warning('无可复制内容')
+      return
+    }
+
+    if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(content)
+      ElMessage.success('已复制到剪贴板')
+      return
+    }
+
+    // 回退：textarea + execCommand
+    const textarea = document.createElement('textarea')
+    textarea.value = content
+    textarea.setAttribute('readonly', '')
+    textarea.style.position = 'fixed'
+    textarea.style.top = '-10000px'
+    textarea.style.left = '-10000px'
+    document.body.appendChild(textarea)
+    textarea.select()
+    textarea.setSelectionRange(0, textarea.value.length)
+    const ok = document.execCommand && document.execCommand('copy')
+    document.body.removeChild(textarea)
+    if (ok) {
+      ElMessage.success('已复制到剪贴板')
+      return
+    }
+
+    // 最后兜底：IE API
+    if (window.clipboardData && typeof window.clipboardData.setData === 'function') {
+      window.clipboardData.setData('Text', content)
+      ElMessage.success('已复制到剪贴板')
+      return
+    }
+
+    throw new Error('无法复制：未检测到可用的复制实现')
   } catch (error) {
     console.error('复制失败:', error)
     ElMessage.error('复制失败')
@@ -945,7 +981,7 @@ const loadRecommendations = async () => {
     if (!route.params.id) return
     
     loadingSimilar.value = true
-    const { data } = await axios.get(`/api/recommendations/similar/${route.params.id}`, { params: { limit: 12 } })
+    const { data } = await axios.get(`/api/recommendations/similar/${route.params.id}`, { params: { limit: 20 } })
     const list = extractList(data)
     recommendations.value = list
     // eslint-disable-next-line no-console
@@ -1297,7 +1333,9 @@ const deleteMovie = async () => {
     }
     
     ElMessage.success('删除成功')
-    // 删除成功后返回首页
+    // 删除成功后返回首页，并通知首页刷新列表
+    // 使用 localStorage 标记仅在本次返回时刷新（不影响其他返回场景）
+    try { localStorage.setItem('homeNeedsRefresh', '1') } catch (_) {}
     router.push('/')
   } catch (error) {
     console.error('删除失败:', error)

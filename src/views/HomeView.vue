@@ -793,6 +793,16 @@ const placeholderCount = computed(() => {
 onActivated(() => {
   // 尝试恢复滚动位置
   const savedScrollPosition = localStorage.getItem('homeScrollPosition')
+  // 优先处理从详情删除返回的刷新场景
+  const needsRefresh = localStorage.getItem('homeNeedsRefresh') === '1'
+  if (needsRefresh) {
+    // 清除标记，触发一次列表刷新并回到顶部
+    try { localStorage.removeItem('homeNeedsRefresh') } catch (_) {}
+    const mainElement = document.querySelector('.el-main')
+    if (mainElement) mainElement.scrollTop = 0
+    handleSearch()
+    return
+  }
   if (savedScrollPosition) {
     const mainElement = document.querySelector('.el-main')
     if (mainElement) {
