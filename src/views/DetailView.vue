@@ -550,10 +550,12 @@
             @click="openFullscreen(tag)"
           >
             <div class="tag-image">
+              <!-- 使用后端返回的 screenshotUrl，并通过 getImageUrl 转为可访问的静态资源 URL -->
               <img
-                :src="tag.screenshotDataUrl"
+                :src="getImageUrl(tag.screenshotUrl)"
                 :alt="tag.text"
                 class="screenshot"
+                @error="handleTagImageError($event)"
               />
               <div class="tag-overlay">
                 <div class="tag-text">{{ tag.text }}</div>
@@ -597,12 +599,14 @@
         </div>
         
         <!-- 图片 -->
+        <!-- 全屏预览同样使用 screenshotUrl 配合 getImageUrl 渲染 -->
         <img 
-          :src="fullscreenTag.screenshotDataUrl"
+          :src="getImageUrl(fullscreenTag.screenshotUrl)"
           :alt="fullscreenTag.text"
           class="fullscreen-image"
           @click="closeFullscreen"
           @dragstart.prevent
+          @error="handleTagImageError($event)"
         />
         
         <!-- 右切换按钮 -->
@@ -696,21 +700,61 @@ const hostAdd = 'http://localhost:8080'
 const loadingSimilar = ref(false)
 
 const getImageUrl = (path) => {
-  // 处理远程图片路径
+  // 通用图片地址处理：支持 http、/api、Windows 本地绝对路径（含 tag/patu 目录）、以及 success\ 相对路径
   if (!path) return ''
-  if(path.startsWith('http')){
-    return path
-  } 
-  // 处理本地图片路径
-  if(path.includes('patu')){
-    // 从patu文件夹提取文件名
-    const fileName = path.split('\\').pop()
-    return fileName ? `/api/images/${fileName}` : ''
+
+  // 远程 URL 原样返回
+  if (path.startsWith('http')) return path
+
+  // 已是可访问静态资源路径
+  if (path.startsWith('/api/images/')) return path
+
+  // 优先处理历史的 success\ 相对路径逻辑（可能需要保留子目录结构）
+  const successPart = path.split('success\\')[1]
+  if (successPart) {
+    return `/api/images/${successPart.replace(/\\/g, '/')}`
   }
-  // 原有逻辑保留
-  const relativePath = path.split('success\\')[1]?.replace(/\\/g, '/')
-  return relativePath ? `/api/images/${relativePath}` : ''
+
+  // 统一将反斜杠转为正斜杠，便于后续判断与切分
+  const normalized = path.replace(/\\/g, '/')
+
+  // 处理本地绝对路径：例如 E:/tag/xxx.jpg 或 E:/patu/xxx.jpg
+  // 规则：取文件名并映射为 /api/images/{fileName}（文件名进行 URL 编码，避免中文/空格出错）
+  const isWindowsAbs = /^[a-zA-Z]:\//.test(normalized)
+  if (isWindowsAbs || normalized.includes('/tag/') || normalized.includes('/patu/')) {
+    const fileName = normalized.split('/').pop()
+    return fileName ? `/api/images/${encodeURIComponent(fileName)}` : ''
+  }
+
+  // 兜底：若传入的是相对文件名或其它可解析形式，尝试按文件名映射
+  const fallbackName = normalized.split('/').pop()
+  return fallbackName ? `/api/images/${encodeURIComponent(fallbackName)}` : ''
 }
+
+// 标签图片加载失败兜底处理：
+// 1）若文件名被编码导致后端无法命中，尝试用未编码文件名重试一次
+// 2）防止死循环，成功重试前先移除 onerror 绑定
+const handleTagImageError = (event) => {
+  try {
+    const imgEl = event?.target
+    if (!imgEl || !imgEl.src) return
+    const currentUrl = new URL(imgEl.src, window.location.origin)
+    const segments = currentUrl.pathname.split('/')
+    const last = segments.pop() || ''
+    const decoded = decodeURIComponent(last)
+    if (decoded !== last) {
+      segments.push(decoded)
+      currentUrl.pathname = segments.join('/')
+      // 避免重试仍失败导致的无限触发
+      imgEl.onerror = null
+      imgEl.src = currentUrl.toString()
+    }
+  } catch (e) {
+    // 忽略兜底错误
+  }
+}
+
+// （重复定义已移除）
 
 // 将推荐项映射为 MovieGrid 需要的字段
 const toGridItem = (rec) => {
