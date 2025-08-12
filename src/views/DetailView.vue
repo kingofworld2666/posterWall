@@ -78,13 +78,14 @@
               </el-button>
 <!--              按钮点击跳转到网站https://javdb.com/search?q=${movie.movieCode}&f=all-->
               <el-tooltip content="在JavDB搜索" placement="top">
-                              <el-link
-                  :href="`https://javdb.com/search?q=${movie.movieCode}&f=all`"
+                <!-- 优先使用 JavDB 影片详情链接；无 vid 时退回到搜索链接 -->
+                <el-link
+                  :href="movie.javdbMovieVid ? `https://javdb.com/v/${movie.javdbMovieVid}` : `https://javdb.com/search?q=${movie.movieCode}&f=all`"
                   target="_blank"
                   underline="never"
                   class="icon-link"
                   rel="noopener noreferrer"
-              >
+                >
                   <el-icon :size="15">
                     <Search />
                   </el-icon>

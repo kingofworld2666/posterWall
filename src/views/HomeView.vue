@@ -118,6 +118,78 @@
           <el-button :type="sortField === 'random' ? 'primary' : ''" icon="Refresh" @click="handleRandomSort">随机</el-button>
         </el-button-group>
       </div>
+
+      <!-- Facet 面板：年份 / 分类 / 标签（默认折叠，可展开） -->
+      <div class="facet-panels">
+        <!-- 年份：标题与值在同一行 -->
+        <div class="facet-row sticky">
+          <div class="facet-row__line">
+            <span class="facet-row__title">年份：</span>
+            <div class="facet-values" :class="{ collapsed: !showYears, expanded: showYears }">
+              <span 
+                class="facet-item" 
+                :class="{ 'is-selected': selectedYear === null }" 
+                @click.stop="clearFacet('year')"
+              >全部</span>
+              <span 
+                v-for="item in facetYears" 
+                :key="getFacetKey(item)" 
+                class="facet-item" 
+                :class="{ 'is-selected': selectedYear === toYearValue(item) }" 
+                @click.stop="applyYearFilter(toYearValue(item))"
+                :title="`${getFacetLabel(item)}（${getFacetCount(item)}）`"
+              >{{ getFacetLabel(item) }}<span class="facet-count">（{{ getFacetCount(item) }}）</span></span>
+            </div>
+            <el-button link size="small" class="facet-row__more" @click="toggleFacet('years')">{{ showYears ? '收起' : '更多' }}</el-button>
+          </div>
+        </div>
+
+        <!-- 分类：标题与值在同一行 -->
+        <div class="facet-row sticky">
+          <div class="facet-row__line">
+            <span class="facet-row__title">分类：</span>
+            <div class="facet-values" :class="{ collapsed: !showCategories, expanded: showCategories }">
+              <span 
+                class="facet-item" 
+                :class="{ 'is-selected': !selectedCategory }" 
+                @click.stop="clearFacet('category')"
+              >全部</span>
+              <span 
+                v-for="item in facetCategories" 
+                :key="getFacetKey(item)" 
+                class="facet-item" 
+                :class="{ 'is-selected': selectedCategory === getFacetLabel(item) }" 
+                @click.stop="applyCategoryFilter(getFacetLabel(item))"
+                :title="`${getFacetLabel(item)}（${getFacetCount(item)}）`"
+              >{{ getFacetLabel(item) }}<span class="facet-count">（{{ getFacetCount(item) }}）</span></span>
+            </div>
+            <el-button link size="small" class="facet-row__more" @click="toggleFacet('categories')">{{ showCategories ? '收起' : '更多' }}</el-button>
+          </div>
+        </div>
+
+        <!-- 标签：标题与值在同一行 -->
+        <div class="facet-row sticky">
+          <div class="facet-row__line">
+            <span class="facet-row__title">标签：</span>
+            <div class="facet-values" :class="{ collapsed: !showTags, expanded: showTags }">
+              <span 
+                class="facet-item" 
+                :class="{ 'is-selected': !selectedTag }" 
+                @click.stop="clearFacet('tag')"
+              >全部</span>
+              <span 
+                v-for="item in facetTags" 
+                :key="getFacetKey(item)" 
+                class="facet-item" 
+                :class="{ 'is-selected': selectedTag === getFacetLabel(item) }" 
+                @click.stop="applyTagFilter(getFacetLabel(item))"
+                :title="`${getFacetLabel(item)}（${getFacetCount(item)}）`"
+              >{{ getFacetLabel(item) }}<span class="facet-count">（{{ getFacetCount(item) }}）</span></span>
+            </div>
+            <el-button link size="small" class="facet-row__more" @click="toggleFacet('tags')">{{ showTags ? '收起' : '更多' }}</el-button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="content">
@@ -189,6 +261,17 @@ const sortDirections = ref({
 const searchQuery = ref('')
 const searchType = ref('all')
 const watchedFilter = ref(null) // 添加已观看/未观看过滤选项，null表示全部
+
+// Facet 相关状态
+const showYears = ref(false) // 年份：false=只展示单行；true=展开显示全部
+const showCategories = ref(false) // 分类：false=只展示单行；true=展开显示全部
+const showTags = ref(false) // 标签：false=只展示单行；true=展开显示全部
+const facetYears = ref([]) // 年份 Facet 数据
+const facetCategories = ref([]) // 分类 Facet 数据
+const facetTags = ref([]) // 标签 Facet 数据
+const selectedYear = ref(null) // 选中的年份（整数）
+const selectedCategory = ref('') // 选中的分类
+const selectedTag = ref('') // 选中的标签
 
 // 搜索历史记录
 const searchHistory = ref([])
@@ -429,6 +512,11 @@ const handleSortChange = (field) => {
   if (watchedFilter.value !== null) {
     params.watched = watchedFilter.value;
   }
+
+  // 添加 Facet 过滤
+  if (selectedYear.value !== null) params.year = selectedYear.value
+  if (selectedCategory.value) params.category = selectedCategory.value
+  if (selectedTag.value) params.tag = selectedTag.value
   
   // 添加搜索关键词
   if (searchQuery.value) {
@@ -452,42 +540,46 @@ const getMovies = async (params) => {
   try {
     let response;
     
-    switch (searchType.value) {
-      case 'all':
-      case 'title':
-        // 全部和标题搜索都使用通用搜索接口
-        response = await axios.get('/api/movies', { params, silent: true });
-        break;
-      case 'actress':
-        response = await axios.get('/api/movies/search/actress', { 
-          params: { ...params, name: searchQuery.value || params.keyword },
-          silent: true
-        });
-        break;
-      case 'director':
-        response = await axios.get('/api/movies/search/director', { 
-          params: { ...params, name: searchQuery.value || params.keyword },
-          silent: true
-        });
-        break;
-      case 'studio':
-        response = await axios.get('/api/movies/search/studio', { 
-          params: { ...params, name: searchQuery.value || params.keyword },
-          silent: true
-        });
-        break;
-      case 'category':
-        response = await axios.get('/api/movies/search/category', { 
-          params: { ...params, categoryName: searchQuery.value || params.keyword },
-          silent: true
-        });
-        break;
-      case 'series':
-        response = await axios.get('/api/movies/search/series', { 
-          params: { ...params, series: searchQuery.value || params.keyword },
-          silent: true
-        });
-        break;
+    // 只要使用了 Facet 过滤（year/category/tag），统一走主列表接口，保证后端新过滤参数生效
+    const hasFacetFilter = selectedYear.value !== null || !!selectedCategory.value || !!selectedTag.value
+
+    if (hasFacetFilter || searchType.value === 'all' || searchType.value === 'title') {
+      response = await axios.get('/api/movies', { params, silent: true })
+    } else {
+      switch (searchType.value) {
+        case 'actress':
+          response = await axios.get('/api/movies/search/actress', { 
+            params: { ...params, name: searchQuery.value || params.keyword },
+            silent: true
+          });
+          break;
+        case 'director':
+          response = await axios.get('/api/movies/search/director', { 
+            params: { ...params, name: searchQuery.value || params.keyword },
+            silent: true
+          });
+          break;
+        case 'studio':
+          response = await axios.get('/api/movies/search/studio', { 
+            params: { ...params, name: searchQuery.value || params.keyword },
+            silent: true
+          });
+          break;
+        case 'category':
+          response = await axios.get('/api/movies/search/category', { 
+            params: { ...params, categoryName: searchQuery.value || params.keyword },
+            silent: true
+          });
+          break;
+        case 'series':
+          response = await axios.get('/api/movies/search/series', { 
+            params: { ...params, series: searchQuery.value || params.keyword },
+            silent: true
+          });
+          break;
+        default:
+          response = await axios.get('/api/movies', { params, silent: true })
+      }
     }
     
     movies.value = response.data.content;
@@ -532,6 +624,10 @@ const handleRandomSort = () => {
   if (watchedFilter.value !== null) {
     params.watched = watchedFilter.value;
   }
+  // 添加 Facet 过滤
+  if (selectedYear.value !== null) params.year = selectedYear.value
+  if (selectedCategory.value) params.category = selectedCategory.value
+  if (selectedTag.value) params.tag = selectedTag.value
   
   getMovies(params);
 };
@@ -568,6 +664,10 @@ const handleWatchedFilterChangeCommand = (command) => {
   if (watchedFilter.value !== null) {
     params.watched = watchedFilter.value;
   }
+  // 添加 Facet 过滤
+  if (selectedYear.value !== null) params.year = selectedYear.value
+  if (selectedCategory.value) params.category = selectedCategory.value
+  if (selectedTag.value) params.tag = selectedTag.value
   
   getMovies(params);
 };
@@ -630,12 +730,26 @@ onMounted(() => {
     searchQuery.value = '';
   }
 
+  // 从路由回填 Facet 过滤
+  if (query.year && !isNaN(parseInt(query.year))) {
+    selectedYear.value = parseInt(query.year)
+  }
+  if (query.category) {
+    selectedCategory.value = String(query.category)
+  }
+  if (query.tag) {
+    selectedTag.value = String(query.tag)
+  }
+
   // 初始化搜索
   handleSearch();
 
   window.addEventListener('resize', () => {
     movies.value = [...movies.value];
   });
+
+  // 拉取 Facet 面板数据（独立接口）
+  fetchFacetData()
 });
 
 // 添加搜索历史记录的函数，只在用户主动搜索时调用
@@ -671,6 +785,17 @@ const handleSearch = () => {
   if (searchQuery.value) {
     params.keyword = searchQuery.value;
   }
+
+  // 添加 Facet 过滤参数
+  if (selectedYear.value !== null) {
+    params.year = selectedYear.value
+  }
+  if (selectedCategory.value) {
+    params.category = selectedCategory.value
+  }
+  if (selectedTag.value) {
+    params.tag = selectedTag.value
+  }
   
   // 更新路由查询参数，但不触发路由变化（使用replace而不是push）
   // 这样在页面刷新或分享链接时能保持当前状态
@@ -705,6 +830,17 @@ const handleSearch = () => {
   if (watchedFilter.value !== null) {
     query.watched = watchedFilter.value.toString();
   }
+
+  // Facet 参数写入 URL
+  if (selectedYear.value !== null) {
+    query.year = String(selectedYear.value)
+  }
+  if (selectedCategory.value) {
+    query.category = selectedCategory.value
+  }
+  if (selectedTag.value) {
+    query.tag = selectedTag.value
+  }
   
   // 使用replace而不是push，避免创建新的历史记录
   router.replace({ query });
@@ -719,6 +855,12 @@ const resetSearch = () => {
   searchQuery.value = ''
   searchType.value = 'all'
   watchedFilter.value = null
+  selectedYear.value = null
+  selectedCategory.value = ''
+  selectedTag.value = ''
+  showYears.value = false
+  showCategories.value = false
+  showTags.value = false
   currentPage.value = 1  // 重置到第一页
   total.value = 0
   
@@ -846,6 +988,16 @@ onActivated(() => {
           sortDirections.value[sortField.value] = query.sortOrder;
         }
       }
+      // 回填 Facet 参数
+      if (query.year && !isNaN(parseInt(query.year))) {
+        selectedYear.value = parseInt(query.year)
+      }
+      if (query.category) {
+        selectedCategory.value = String(query.category)
+      }
+      if (query.tag) {
+        selectedTag.value = String(query.tag)
+      }
       
       console.log('onActivated - searchType:', searchType.value, 'searchQuery:', searchQuery.value, 'page:', currentPage.value);
       // 设置标志，防止watch重复处理
@@ -895,10 +1047,10 @@ watch(
       return;
     }
     
-    // 检查是否是从详情页跳转过来的搜索（有type和keyword参数）
-    if (newQuery.type && newQuery.keyword) {
+    // 检查是否是从详情页跳转过来的搜索（有type和keyword参数）或 Facet 参数变化
+    if ((newQuery.type && newQuery.keyword) || newQuery.year || newQuery.category || newQuery.tag) {
       // 检查参数是否真的变化了
-      if (newQuery.type !== oldQuery?.type || newQuery.keyword !== oldQuery?.keyword) {
+      if (newQuery.type !== oldQuery?.type || newQuery.keyword !== oldQuery?.keyword || newQuery.year !== oldQuery?.year || newQuery.category !== oldQuery?.category || newQuery.tag !== oldQuery?.tag) {
         searchType.value = newQuery.type
         searchQuery.value = newQuery.keyword
         
@@ -931,6 +1083,15 @@ watch(
             sortDirections.value[sortField.value] = newQuery.sortOrder;
           }
         }
+
+        // Facet 参数回填
+        if (newQuery.year && !isNaN(parseInt(newQuery.year))) {
+          selectedYear.value = parseInt(newQuery.year)
+        } else {
+          selectedYear.value = null
+        }
+        selectedCategory.value = newQuery.category ? String(newQuery.category) : ''
+        selectedTag.value = newQuery.tag ? String(newQuery.tag) : ''
         
         console.log('watch - searchType:', searchType.value, 'searchQuery:', searchQuery.value, 'page:', currentPage.value);
         handleSearch()
@@ -939,6 +1100,70 @@ watch(
   },
   { immediate: false } // 不在组件初始化时立即执行
 )
+
+// ================= Facet: 数据拉取与交互 =================
+/**
+ * FacetItem 兼容字段读取工具
+ * - 后端结构可能为 {name, count} 或 {label, count} 或 {value, count} 或 {year, count} 或 {text, count}
+ */
+const getFacetLabel = (item) => item?.name ?? item?.label ?? item?.value ?? item?.year ?? item?.text ?? ''
+const getFacetCount = (item) => item?.count ?? item?.total ?? item?.num ?? item?.valueCount ?? 0
+const getFacetKey = (item) => `${getFacetLabel(item)}:${getFacetCount(item)}`
+const toYearValue = (item) => {
+  const raw = getFacetLabel(item)
+  const num = Number(raw)
+  return Number.isNaN(num) ? null : num
+}
+
+// 拉取 facets 数据
+const fetchFacetData = async () => {
+  try {
+    const [yRes, cRes, tRes] = await Promise.all([
+      axios.get('/api/movies/facets/years', { silent: true }),
+      axios.get('/api/movies/facets/categories', { silent: true }),
+      axios.get('/api/movies/facets/tags', { silent: true })
+    ])
+    facetYears.value = Array.isArray(yRes.data) ? yRes.data : []
+    facetCategories.value = Array.isArray(cRes.data) ? cRes.data : []
+    facetTags.value = Array.isArray(tRes.data) ? tRes.data : []
+  } catch (e) {
+    console.error('拉取 Facet 面板失败:', e)
+  }
+}
+
+// 展开/折叠 Facet 面板
+const toggleFacet = (type) => {
+  if (type === 'years') showYears.value = !showYears.value
+  if (type === 'categories') showCategories.value = !showCategories.value
+  if (type === 'tags') showTags.value = !showTags.value
+}
+
+// 应用 Facet 过滤
+const applyYearFilter = (year) => {
+  if (year === null) return
+  selectedYear.value = year
+  currentPage.value = 1
+  handleSearch()
+}
+const applyCategoryFilter = (category) => {
+  selectedCategory.value = category
+  currentPage.value = 1
+  handleSearch()
+}
+const applyTagFilter = (tag) => {
+  selectedTag.value = tag
+  currentPage.value = 1
+  handleSearch()
+}
+
+// 清空 Facet 筛选
+const clearFacet = (type) => {
+  if (type === 'year') selectedYear.value = null
+  if (type === 'category') selectedCategory.value = ''
+  if (type === 'tag') selectedTag.value = ''
+  currentPage.value = 1
+  handleSearch()
+}
 </script>
 
 <style lang="scss" scoped>
@@ -1167,6 +1392,90 @@ watch(
         color: #e0e0e0 !important; 
     }
   }
+}
+
+// Facet 面板样式
+.facet-panels {
+  padding: 4px 8px 0 8px;
+  border-top: 1px solid #222;
+}
+.facet-row {
+  padding: 6px 0;
+  border-bottom: 1px dashed #222;
+}
+.facet-row.sticky {
+  position: sticky;
+  top: 44px; /* 吸顶在工具栏下方，避免遮挡（根据你的 header 高度微调） */
+  background: rgba(0,0,0,0.9);
+  z-index: 95;
+}
+.facet-row__line { display: flex; align-items: flex-start; gap: 8px; flex-wrap: nowrap; }
+.facet-row__title {
+  font-weight: 600;
+  text-align: left;
+  width: 50px; /* 给标题留固定宽度，避免挤压内容换行 */
+  flex: 0 0 50px;
+}
+.facet-row__more { margin-left: 8px; color: #66b1ff !important; flex: 0 0 auto; align-self: flex-start; }
+.facet-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.facet-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0; /* 允许在同一行内压缩，避免把标题或更多按钮挤换行 */
+}
+.facet-values.collapsed {
+  /* 单行展示，超出部分隐藏（通过最大高度裁切） */
+  max-height: 34px; /* 与 small 按钮高度接近 */
+  overflow: hidden;
+  flex-wrap: nowrap;
+  white-space: nowrap; /* 保证真正单行 */
+}
+
+/* 行内值项样式（灰底，蓝字加粗；选中主色） */
+.facet-item {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px; /* 缩小高度与左右留白 */
+  border-radius: 4px;
+  background-color: #2c2c2c;
+  border: 1px solid #3a3a3a;
+  color: #66b1ff;
+  font-weight: 700;
+  font-size: 13px; /* 缩小字体，整体更紧凑 */
+  cursor: pointer;
+  user-select: none;
+}
+.facet-item.is-selected {
+  background-color: #007bff;
+  border-color: #007bff;
+  color: #fff;
+}
+
+/* 按钮样式：默认灰底，蓝色加粗文字；选中保持主色 */
+:deep(.facet-grid .el-button) {
+  background-color: #2c2c2c !important; /* 灰底 */
+  border-color: #3a3a3a !important;
+  color: #66b1ff !important; /* 蓝色字体 */
+  font-weight: 700 !important; /* 加粗 */
+}
+:deep(.facet-grid .el-button.is-disabled) {
+  opacity: 0.8;
+}
+:deep(.facet-grid .el-button.el-button--primary) {
+  background-color: #007bff !important; /* 选中主色 */
+  border-color: #007bff !important;
+  color: #ffffff !important;
+}
+.facet-count {
+  color: #909399;
+  margin-left: 2px;
+  font-size: 12px;
 }
 
 .el-dropdown-menu__item.is-active {
