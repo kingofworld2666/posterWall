@@ -53,7 +53,7 @@
       
       <el-main>
         <router-view v-slot="{ Component }">
-          <keep-alive include="HomeView,HistoryView,DetailView">
+          <keep-alive include="HomeView,HistoryView,DetailView,FavoriteView">
             <component
               :is="Component"
               :key="$route.name"

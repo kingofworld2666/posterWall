@@ -172,7 +172,7 @@ function formatTime(timeInput: string | number | Date | undefined): string {
 .poster-container {
   position: relative;
   width: 100%;
-  aspect-ratio: 2 / 3;
+  aspect-ratio: 2 / 3; /* 预占位防止布局跳动 */
   background-color: #1a1a1a;
   overflow: hidden;
 }
@@ -180,7 +180,7 @@ function formatTime(timeInput: string | number | Date | undefined): string {
 .el-image {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: cover; /* 填满占位盒，避免加载过程高度变化 */
   display: block;
 }
 

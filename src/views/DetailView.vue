@@ -4,7 +4,14 @@
     class="detail-container"
   >
     <h1 class="movie-title">
-      {{ movie.titleZh }}
+      <el-tooltip
+        class="movie-title__tooltip"
+        :content="movie.titleZh"
+        placement="top"
+        :show-after="300"
+      >
+        <span class="movie-title__text">{{ movie.titleZh }}</span>
+      </el-tooltip>
       <div class="title-actions">
         <el-button
           v-if="!isEditing"
@@ -58,6 +65,14 @@
               更换海报
             </el-button>
           </el-upload>
+          <el-button
+            type="success"
+            size="small"
+            @click="openCropDialog"
+          >
+            <el-icon><Crop /></el-icon>
+            裁剪封面
+          </el-button>
         </div>
       </div>
       <div class="info">
@@ -656,6 +671,54 @@
         </div>
       </div>
     </div>
+
+    <el-dialog
+      v-model="cropDialogVisible"
+      title="裁剪封面图片"
+      :width="cropDialogWidth"
+      :before-close="closeCropDialog"
+      class="crop-dialog"
+      :close-on-click-modal="false"
+    >
+      <div class="crop-container">
+        <div class="crop-preview-container">
+          <div class="crop-preview" ref="cropPreviewRef">
+            <img
+              ref="cropImageRef"
+              :src="cropImageSrc"
+              alt="裁剪预览"
+              class="crop-image"
+              @load="initCrop"
+            />
+            <div class="crop-overlay" ref="cropOverlayRef"></div>
+            <div class="crop-box" ref="cropBoxRef">
+              <div class="crop-box-content"></div>
+              <div class="crop-resize-handles">
+                <div class="resize-handle nw" data-direction="nw"></div>
+                <div class="resize-handle ne" data-direction="ne"></div>
+                <div class="resize-handle sw" data-direction="sw"></div>
+                <div class="resize-handle se" data-direction="se"></div>
+                <div class="resize-handle n" data-direction="n"></div>
+                <div class="resize-handle s" data-direction="s"></div>
+                <div class="resize-handle w" data-direction="w"></div>
+                <div class="resize-handle e" data-direction="e"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="crop-controls">
+          <div class="crop-info">
+            <p>拖动裁剪框选择要保留的区域，框外区域将被模糊处理</p>
+            <p>裁剪尺寸: <span class="crop-size">{{ cropSize }}</span></p>
+          </div>
+          <div class="crop-actions">
+            <el-button @click="resetCrop">重置</el-button>
+            <el-button type="primary" @click="applyCrop" :loading="cropLoading">保存裁剪</el-button>
+            <el-button @click="closeCropDialog">取消</el-button>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -665,7 +728,7 @@ import { ref, nextTick, onMounted, onBeforeUnmount, watch, computed } from 'vue'
 defineOptions({ name: 'DetailView' })
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, Edit, CopyDocument, Star, StarFilled, Clock, Timer, VideoPlay, Loading, Warning, Delete, Search, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
+import { Upload, Edit, CopyDocument, Star, StarFilled, Clock, Timer, VideoPlay, Loading, Warning, Delete, Search, ArrowLeft, ArrowRight, Crop } from '@element-plus/icons-vue'
 import axios from 'axios'
 import App from "@/App.vue";
 import MovieGrid from '@/components/MovieGrid.vue'
@@ -1242,7 +1305,7 @@ const search115Files = async () => {
 
     const code = resp?.data?.code
     if (code === 201) {
-      // 201 表示 Cookie 失效：显示“需要设置Cookie”的按钮
+      // 201 表示 Cookie 失效：显示"需要设置Cookie"的按钮
       needSetCookie.value = true
       pan115Results.value = []
       return
@@ -1255,13 +1318,10 @@ const search115Files = async () => {
     }
 
     const searchResults = resp.data.data || []
-    const videoExtensions = ['.mp4', '.avi', '.mkv', '.mov', '.m2ts', '.wmv']
     
     pan115Results.value = searchResults.filter(result => 
       result.fid && 
-      result.n && 
-      result.n.toLowerCase().includes(videoCode.toLowerCase()) && 
-      videoExtensions.some(ext => result.n.toLowerCase().endsWith(ext))
+      result.n 
     ).map(item => ({
       name: item.n,
       size: formatFileSize(item.s),
@@ -1413,6 +1473,271 @@ watch(
     }
   }
 )
+
+const cropDialogVisible = ref(false)
+const cropImageSrc = ref('')
+const cropImageRef = ref(null)
+const cropPreviewRef = ref(null)
+const cropOverlayRef = ref(null)
+const cropBoxRef = ref(null)
+const cropSize = ref('0 x 0')
+const cropLoading = ref(false)
+const cropDialogWidth = ref('800px')
+const cropData = ref({ x: 0, y: 0, width: 0, height: 0 })
+const isDragging = ref(false)
+const isResizing = ref(false)
+const dragStart = ref({ x: 0, y: 0 })
+const resizeDirection = ref('')
+const openCropDialog = () => {
+  if (!movie.value?.coverPath) {
+    ElMessage.warning('请先上传封面图片')
+    return
+  }
+  cropImageSrc.value = getImageUrl(movie.value.coverPath)
+  cropDialogVisible.value = true
+}
+const closeCropDialog = () => {
+  cropDialogVisible.value = false
+  cropImageSrc.value = ''
+  cropData.value = { x: 0, y: 0, width: 0, height: 0 }
+  cropSize.value = '0 x 0'
+  removeCropEventListeners()
+}
+const getImageOffsets = () => {
+  const containerRect = cropPreviewRef.value.getBoundingClientRect();
+  const imgRect = cropImageRef.value.getBoundingClientRect();
+  return {
+    offsetX: imgRect.left - containerRect.left,
+    offsetY: imgRect.top - containerRect.top,
+    imgWidth: imgRect.width,
+    imgHeight: imgRect.height
+  };
+};
+const initCrop = () => {
+  nextTick(() => {
+    if (cropImageRef.value && cropPreviewRef.value) {
+      const { offsetX, offsetY, imgWidth, imgHeight } = getImageOffsets();
+      cropDialogWidth.value = `${imgWidth + 100}px`;
+      const cropWidth = imgWidth * 0.5;
+      const cropHeight = imgHeight ;
+      const cropX = offsetX + imgWidth * 0.5;
+      const cropY = offsetY + (imgHeight - cropHeight) / 2;
+      if (cropBoxRef.value) {
+        cropBoxRef.value.style.left = `${cropX}px`;
+        cropBoxRef.value.style.top = `${cropY}px`;
+        cropBoxRef.value.style.width = `${cropWidth}px`;
+        cropBoxRef.value.style.height = `${cropHeight}px`;
+      }
+      updateCropData(cropX, cropY, cropWidth, cropHeight, offsetX, offsetY, imgWidth, imgHeight);
+      updateOverlay();
+      addCropEventListeners();
+    }
+  });
+};
+const addCropEventListeners = () => {
+  if (cropBoxRef.value) {
+    cropBoxRef.value.addEventListener('mousedown', startDrag)
+    const handles = cropBoxRef.value.querySelectorAll('.resize-handle')
+    handles.forEach(handle => {
+      handle.addEventListener('mousedown', startResize)
+    })
+  }
+  document.addEventListener('mousemove', handleMouseMove)
+  document.addEventListener('mouseup', handleMouseUp)
+}
+const removeCropEventListeners = () => {
+  if (cropBoxRef.value) {
+    cropBoxRef.value.removeEventListener('mousedown', startDrag)
+    const handles = cropBoxRef.value.querySelectorAll('.resize-handle')
+    handles.forEach(handle => {
+      handle.removeEventListener('mousedown', startResize)
+    })
+  }
+  document.removeEventListener('mousemove', handleMouseMove)
+  document.removeEventListener('mouseup', handleMouseUp)
+}
+const startDrag = (e) => {
+  if (e.target.classList.contains('resize-handle')) return
+  isDragging.value = true
+  dragStart.value = {
+    x: e.clientX - cropBoxRef.value.offsetLeft,
+    y: e.clientY - cropBoxRef.value.offsetTop
+  }
+  e.preventDefault()
+}
+const startResize = (e) => {
+  isResizing.value = true
+  resizeDirection.value = e.target.dataset.direction
+  dragStart.value = {
+    x: e.clientX,
+    y: e.clientY,
+    width: cropBoxRef.value.offsetWidth,
+    height: cropBoxRef.value.offsetHeight,
+    left: cropBoxRef.value.offsetLeft,
+    top: cropBoxRef.value.offsetTop
+  }
+  e.preventDefault()
+  e.stopPropagation()
+}
+const handleMouseMove = (e) => {
+  if (isDragging.value) {
+    dragCropBox(e)
+  } else if (isResizing.value) {
+    resizeCropBox(e)
+  }
+}
+const handleMouseUp = () => {
+  isDragging.value = false
+  isResizing.value = false
+  resizeDirection.value = ''
+}
+const dragCropBox = (e) => {
+  if (!cropBoxRef.value || !cropImageRef.value) return;
+  const { offsetX, offsetY, imgWidth, imgHeight } = getImageOffsets();
+  let newX = e.clientX - dragStart.value.x;
+  let newY = e.clientY - dragStart.value.y;
+  newX = Math.max(offsetX, Math.min(newX, offsetX + imgWidth - cropBoxRef.value.offsetWidth));
+  newY = Math.max(offsetY, Math.min(newY, offsetY + imgHeight - cropBoxRef.value.offsetHeight));
+  cropBoxRef.value.style.left = `${newX}px`;
+  cropBoxRef.value.style.top = `${newY}px`;
+  updateCropData(newX, newY, cropBoxRef.value.offsetWidth, cropBoxRef.value.offsetHeight, offsetX, offsetY, imgWidth, imgHeight);
+  updateOverlay();
+};
+const resizeCropBox = (e) => {
+  if (!cropBoxRef.value || !cropImageRef.value) return;
+  const { offsetX, offsetY, imgWidth, imgHeight } = getImageOffsets();
+  const deltaX = e.clientX - dragStart.value.x;
+  const deltaY = e.clientY - dragStart.value.y;
+  let newLeft = dragStart.value.left;
+  let newTop = dragStart.value.top;
+  let newWidth = dragStart.value.width;
+  let newHeight = dragStart.value.height;
+  switch (resizeDirection.value) {
+    case 'nw':
+      newLeft = dragStart.value.left + deltaX;
+      newTop = dragStart.value.top + deltaY;
+      newWidth = dragStart.value.width - deltaX;
+      newHeight = dragStart.value.height - deltaY;
+      break;
+    case 'ne':
+      newTop = dragStart.value.top + deltaY;
+      newWidth = dragStart.value.width + deltaX;
+      newHeight = dragStart.value.height - deltaY;
+      break;
+    case 'sw':
+      newLeft = dragStart.value.left + deltaX;
+      newWidth = dragStart.value.width - deltaX;
+      newHeight = dragStart.value.height + deltaY;
+      break;
+    case 'se':
+      newWidth = dragStart.value.width + deltaX;
+      newHeight = dragStart.value.height + deltaY;
+      break;
+    case 'n':
+      newTop = dragStart.value.top + deltaY;
+      newHeight = dragStart.value.height - deltaY;
+      break;
+    case 's':
+      newHeight = dragStart.value.height + deltaY;
+      break;
+    case 'w':
+      newLeft = dragStart.value.left + deltaX;
+      newWidth = dragStart.value.width - deltaX;
+      break;
+    case 'e':
+      newWidth = dragStart.value.width + deltaX;
+      break;
+  }
+  newWidth = Math.max(50, newWidth);
+  newHeight = Math.max(50, newHeight);
+  newLeft = Math.max(offsetX, Math.min(newLeft, offsetX + imgWidth - newWidth));
+  newTop = Math.max(offsetY, Math.min(newTop, offsetY + imgHeight - newHeight));
+  newWidth = Math.min(newWidth, offsetX + imgWidth - newLeft);
+  newHeight = Math.min(newHeight, offsetY + imgHeight - newTop);
+  cropBoxRef.value.style.left = `${newLeft}px`;
+  cropBoxRef.value.style.top = `${newTop}px`;
+  cropBoxRef.value.style.width = `${newWidth}px`;
+  cropBoxRef.value.style.height = `${newHeight}px`;
+  updateCropData(newLeft, newTop, newWidth, newHeight, offsetX, offsetY, imgWidth, imgHeight);
+  updateOverlay();
+};
+const updateCropData = (x, y, width, height, offsetX, offsetY, imgWidth, imgHeight) => {
+  cropData.value = {
+    x: (x - offsetX) / imgWidth,
+    y: (y - offsetY) / imgHeight,
+    width: width / imgWidth,
+    height: height / imgHeight
+  };
+  cropSize.value = `${Math.round(width)} x ${Math.round(height)}`;
+};
+const updateOverlay = () => {
+  if (!cropOverlayRef.value || !cropBoxRef.value) return
+  const boxRect = cropBoxRef.value.getBoundingClientRect()
+  const previewRect = cropPreviewRef.value.getBoundingClientRect()
+  const left = boxRect.left - previewRect.left
+  const top = boxRect.top - previewRect.top
+  cropOverlayRef.value.style.clipPath = `polygon(
+    0% 0%, 
+    0% 100%, 
+    ${left}px 100%, 
+    ${left}px ${top}px, 
+    ${left + boxRect.width}px ${top}px, 
+    ${left + boxRect.width}px ${top + boxRect.height}px, 
+    ${left}px ${top + boxRect.height}px, 
+    ${left}px 100%, 
+    100% 100%, 
+    100% 0%
+  )`
+}
+const resetCrop = () => {
+  if (cropImageRef.value && cropBoxRef.value) {
+    const { offsetX, offsetY, imgWidth, imgHeight } = getImageOffsets();
+    const cropWidth = imgWidth ;
+    const cropHeight = imgHeight ;
+    const cropX = offsetX + imgWidth * 0.5;
+    const cropY = offsetY + (imgHeight - cropHeight) / 2;
+    cropBoxRef.value.style.left = `${cropX}px`;
+    cropBoxRef.value.style.top = `${cropY}px`;
+    cropBoxRef.value.style.width = `${cropWidth}px`;
+    cropBoxRef.value.style.height = `${cropHeight}px`;
+    updateCropData(cropX, cropY, cropWidth, cropHeight, offsetX, offsetY, imgWidth, imgHeight);
+    updateOverlay();
+  }
+}
+const applyCrop = async () => {
+  try {
+    if (!movie.value?.id) {
+      ElMessage.error('电影信息不完整')
+      return
+    }
+    cropLoading.value = true
+    // 组装请求体，使用application/json格式
+    const payload = {
+      movieId: movie.value.id, // 电影ID
+      cropData: cropData.value // 裁剪参数对象
+    }
+    // 增加日志，打印即将发送的payload内容，方便调试
+    console.log('提交裁剪参数 payload:', payload)
+    // 发送POST请求，Content-Type为application/json
+    const response = await fetch('/api/movies/savePoster', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    })
+    if (!response.ok) {
+      ElMessage.error( '裁剪保存失败')
+    }
+    ElMessage.success( '封面裁剪保存成功')
+    closeCropDialog()
+  } catch (error) {
+    console.error('裁剪保存失败:', error)
+    ElMessage.error('裁剪保存失败')
+  } finally {
+    cropLoading.value = false
+  }
+}
 </script>
 
 <style lang="scss" scoped>
@@ -1671,6 +1996,19 @@ watch(
   display: flex;
   align-items: center;
   gap: 12px;
+  height: 48px;
+  min-height: 48px;
+  max-height: 48px;
+  overflow: hidden;
+  white-space: nowrap;
+  
+  .movie-title__text {
+    display: inline-block;
+    max-width: calc(100% - 180px); /* 预留右侧按钮区域宽度 */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 
   .title-actions {
     margin-left: auto;
@@ -1730,14 +2068,15 @@ watch(
     flex: 0 1 clamp(300px, 55vw, 1200px);
 
     .poster-container {
-      width: 100%;
-      max-width: 1200px;
+      width: 800px;
+      max-width: 800px;
       /* 使用图片原始比例自适应高度，避免与右侧信息视觉不匹配 */
       /* 在大屏下限制最大高度，防止溢出 */
-      max-height: calc(100vh - 220px);
+      max-height: 535.994px;
+      height: 535.994px;
       display: flex;
-      justify-content: center;
-      align-items: center;
+      justify-content: center; /* 水平方向保持居中 */
+      align-items: flex-start; /* 垂直方向固定在顶部，避免内容在容器内上下位移 */
       background-color: #000; /* 避免出现白边 */
       border-radius: 8px;
       overflow: hidden;
@@ -1753,11 +2092,21 @@ watch(
     }
 
     .movie-poster {
-      width: 100%;
-      height: auto; /* 以图片原始比例决定高度，避免拉伸 */
+      width: 800px;
+      height: 535.994px; /* 与容器一致，避免内部重排 */
       object-fit: contain;
+      /* 固定封面在容器内的位置：顶部居中，避免进入时的纵向位置变化 */
+      object-position: top center;
       border-radius: 8px;
       box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+    }
+
+    /* Element Plus 内部 img 元素定位：确保与上面的 object-position 一致生效 */
+    :deep(.movie-poster .el-image__inner) {
+      object-fit: contain !important;
+      object-position: top center !important;
+      width: 800px !important;
+      height: 535.994px !important;
     }
 
     .el-image {
@@ -1880,7 +2229,7 @@ watch(
 @media (min-width: 1280px) {
   .movie-header {
     flex-wrap: nowrap;
-    align-items: stretch; /* 让左右两列同高 */
+    align-items: flex-start; /* 不再强制两列同高，封面保持自身固定高度 */
   }
   .movie-header .poster {
     flex: 0 0 calc(100% - 392px); /* 预留信息区360 + 间距32 */
@@ -1889,16 +2238,14 @@ watch(
   }
   .movie-header .poster .poster-container {
     max-width: 100%;
-    height: 100%; /* 随信息区高度自适应 */
-    max-height: none; /* 取消上面的高度上限，跟随信息区 */
+    /* 保持全局固定尺寸设置，不再随右侧信息区自适应高度 */
   }
   .movie-header .info {
     flex: 0 0 360px;
     max-width: 360px;
   }
   .movie-header .poster .movie-poster {
-    width: auto;   /* 以高度为主，保持比例 */
-    height: 100%;  /* 与信息区等高 */
+    /* 保持全局固定尺寸与定位，不再与信息区等高 */
     object-fit: contain;
   }
 }
@@ -2278,7 +2625,7 @@ watch(
   -khtml-user-drag: none;
   -moz-user-drag: none;
   -o-user-drag: none;
-  user-drag: none;
+  /* user-drag: none; 非标准属性，移除以消除警告 */
 }
 
 .nav-button {
@@ -2534,5 +2881,164 @@ watch(
 .icon-link:hover {
   color: #409eff;
   transform: scale(1.1);
+}
+
+:deep(.crop-dialog) {
+  .el-dialog {
+    background-color: #1a1a1a;
+    border: 1px solid #444;
+  }
+  .el-dialog__header {
+    background-color: #1a1a1a;
+    border-bottom: 1px solid #444;
+    color: #fff;
+  }
+  .el-dialog__title {
+    color: #fff;
+  }
+  .el-dialog__body {
+    background-color: #1a1a1a;
+    color: #fff;
+    padding: 20px;
+  }
+}
+.crop-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.crop-preview-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #000;
+  border: 1px solid #444;
+  border-radius: 8px;
+  padding: 10px;
+  min-height: 400px;
+}
+.crop-preview {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  max-height: 600px;
+}
+.crop-image {
+  max-width: 100%;
+  max-height: 600px;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  display: block;
+}
+.crop-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  pointer-events: none;
+  z-index: 1;
+}
+.crop-box {
+  position: absolute;
+  border: 2px solid #409eff;
+  background: transparent;
+  cursor: move;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  z-index: 10;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+  .crop-box-content {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+  }
+}
+.crop-resize-handles {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.resize-handle {
+  position: absolute;
+  background: #409eff;
+  border: 1px solid #fff;
+  pointer-events: all;
+  z-index: 11;
+  &.nw, &.ne, &.sw, &.se {
+    width: 8px;
+    height: 8px;
+  }
+  &.n, &.s {
+    width: 8px;
+    height: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  &.w, &.e {
+    width: 4px;
+    height: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  &.nw { top: -4px; left: -4px; cursor: nw-resize; }
+  &.ne { top: -4px; right: -4px; cursor: ne-resize; }
+  &.sw { bottom: -4px; left: -4px; cursor: sw-resize; }
+  &.se { bottom: -4px; right: -4px; cursor: se-resize; }
+  &.n { top: -4px; cursor: n-resize; }
+  &.s { bottom: -4px; cursor: s-resize; }
+  &.w { left: -4px; cursor: w-resize; }
+  &.e { right: -4px; cursor: e-resize; }
+}
+.crop-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  background-color: #2a2a2a;
+  border-radius: 8px;
+  border: 1px solid #444;
+}
+.crop-info {
+  color: #fff;
+  text-align: center;
+  p { margin: 8px 0; font-size: 14px; }
+  .crop-size { color: #409eff; font-weight: bold; font-size: 16px; }
+}
+.crop-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  .el-button {
+    background-color: #1a1a1a;
+    border-color: #444;
+    color: #fff;
+  }
+  .el-button:hover {
+    background-color: #333;
+    border-color: #666;
+    color: #fff;
+  }
+  .el-button--primary {
+    background-color: #409eff;
+    border-color: #409eff;
+    color: #fff;
+  }
+  .el-button--primary:hover {
+    background-color: #337ecc;
+    border-color: #337ecc;
+    color: #fff;
+  }
 }
 </style>

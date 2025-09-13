@@ -25,13 +25,13 @@
         <el-input
           v-model="searchQuery"
           :placeholder="getSearchPlaceholder"
-          @keyup.enter="loadFavorites" 
+          @keyup.enter="onSearch" 
           clearable
-          @clear="loadFavorites"
+          @clear="onSearch"
           class="search-input"
         >
           <template #append>
-            <el-button :icon="Search" @click="loadFavorites" />
+            <el-button :icon="Search" @click="onSearch" />
           </template>
         </el-input>
       </div>
@@ -153,15 +153,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch, onActivated, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import axios from 'axios';
-import {
-  VideoCamera, Star, Picture, Delete, Avatar, Collection, Search,
-  View // 添加 View 图标
-} from '@element-plus/icons-vue';
-import MovieGrid from '@/components/MovieGrid.vue'; // 重新导入 MovieGrid 组件
+import { VideoCamera, Star, Delete, Avatar, Collection, Search } from '@element-plus/icons-vue';
+import MovieGrid from '../components/MovieGrid.vue'; // 修正导入路径，避免别名在 TS 环境下解析失败
+
+// 指定组件名称，便于 keep-alive include 精确命中
+defineOptions({ name: 'FavoriteView' });
 
 interface MovieItem {
   id: string;
@@ -232,7 +232,8 @@ const loadFavorites = async () => {
     if (activeTab.value === 'movies') {
       console.log('[收藏视图] 加载收藏影片，参数:', JSON.stringify(params));
       try {
-        response = await axios.get('/api/favorites/movies', { params, silent: true });
+        // 发起分页查询请求（去除不被 AxiosRequestConfig 支持的自定义字段）
+        response = await axios.get('/api/favorites/movies', { params });
         console.log('[收藏视图] 收藏影片API响应:', response);
         if (response && response.data) {
           // 兼容两种返回：数组 或 分页对象 { content, totalElements }
@@ -315,7 +316,8 @@ const removeFromFavorites = async (item: MovieItem | ActorItem | TagItem, type: 
       try {
         // 后端按“电影ID”删除；兼容响应中既有 id 也有 movieId 的情况
         const movieId = (item as any).movieId || (item as any).id;
-        const response = await axios.delete(`/api/favorites/movies/${movieId}`, { silent: true });
+        // 删除收藏请求（去除不被 AxiosRequestConfig 支持的自定义字段）
+        const response = await axios.delete(`/api/favorites/movies/${movieId}`);
         console.log(`[收藏视图] 移除收藏影片API响应:`, response);
         if ((response.status === 200 || response.status === 204) || (response.data && response.data.success === true)) {
           ElMessage.success('取消收藏影片成功');
@@ -364,6 +366,12 @@ const handleCurrentChange = (val: number) => {
   loadFavorites();
 };
 
+// 搜索触发时重置页码到第一页，进行分页查询
+const onSearch = () => {
+  currentPage.value = 1;
+  loadFavorites();
+};
+
 const getImageUrl = (path: string | undefined) => {
   if (!path) return '';
   if(path.startsWith('http')){
@@ -394,7 +402,11 @@ const formatFavoriteTime = (timeStr: string | undefined) => {
 
 const goToDetail = (movieId: string) => {
   console.log('[收藏视图] 跳转到电影详情页, ID:', movieId);
-  router.push(`/detail/${movieId}`); // 用户更新了路由
+  // 进入详情前保存主滚动容器的滚动位置
+  const mainElement = document.querySelector('.el-main') as HTMLElement | null;
+  const scrollTop = mainElement ? mainElement.scrollTop : 0;
+  try { localStorage.setItem('favoriteScrollPosition', scrollTop.toString()); } catch (_) {}
+  router.push(`/detail/${movieId}`);
 };
 
 const goToActorDetail = (actorId: string) => {
@@ -409,6 +421,18 @@ const searchByTag = (tagName: string) => {
 onMounted(() => {
   console.log('[收藏视图] 组件已挂载, 开始加载初始收藏数据。');
   loadFavorites();
+});
+
+// 从详情返回时恢复滚动位置
+onActivated(() => {
+  const saved = typeof window !== 'undefined' ? localStorage.getItem('favoriteScrollPosition') : null;
+  if (saved) {
+    nextTick(() => {
+      const mainElement = document.querySelector('.el-main') as HTMLElement | null;
+      if (mainElement) mainElement.scrollTop = parseInt(saved);
+      try { localStorage.removeItem('favoriteScrollPosition'); } catch (_) {}
+    });
+  }
 });
 
 </script>
@@ -468,7 +492,12 @@ onMounted(() => {
   width: 100%;
 }
 
-.pagination-container { display: none !important; }
+/* 分页容器样式：显示并居中 */
+.pagination-container {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+}
 
 /* 输入与按钮深色适配 */
 :deep(.el-input__wrapper) {
